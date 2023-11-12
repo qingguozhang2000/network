@@ -1,4 +1,5 @@
 /*
+ * Slightly adapted from https://ohm.bu.edu/~cdubois/CLEAN/pings%20and%20things/
  * pinger.c
  * This is a ping imitation program
  * It will send an ICMP ECHO packet to the server of
