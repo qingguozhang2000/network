@@ -1,0 +1,17 @@
+I adapted from the following code:
+https://ohm.bu.edu/~cdubois/CLEAN/pings%20and%20things/
+
+In a linux environment, copy the pinger.c file to somewhere.
+
+Run the following command to build.
+gcc pinger.c -o pinger
+
+Try to run the program like this without sudo: 
+./pinger google.com
+
+If it complains, you can try to run it with sudo like this:
+sudo ./pinger google.com
+
+some additional reading:
+https://www.includehelp.com/computer-networks/mastering-icmp-ping-in-c.aspx
+
