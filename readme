@@ -15,3 +15,9 @@ sudo ./pinger google.com
 some additional reading:
 https://www.includehelp.com/computer-networks/mastering-icmp-ping-in-c.aspx
 
+# Http Web Server
+https://bruinsslot.jp/post/simple-http-webserver-in-c/
+
+# Http Web Client
+https://www.unix.com/programming/106672-c-http-socket-programming.html
+

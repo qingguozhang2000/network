@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
 
 void DieWithError(char *errorMessage)
 {
-    printf(errorMessage);
+    puts(errorMessage);
 }
 
 void HandleTCPClient(int clntSocket) /* TCP client handling function */
@@ -79,7 +79,8 @@ void HandleTCPClient(int clntSocket) /* TCP client handling function */
     recv(clntSocket, httpRequest, 1000, 0);
     printf("HTTP Request: %s\n", httpRequest);
     // WHAT separates an HTTP request/response from just text?
-    char buffer[1024] = "HTTP/1.1 200 OK\n";
+    char buffer[1024] = "HTTP/1.1 200 OK\r\n";
+    send(clntSocket, buffer, strlen(buffer), 0);
     // if there is a file request:
     // Find the file
     // If file doesn't exist, send error 404

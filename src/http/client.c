@@ -1,107 +1,112 @@
-#include <stdio.h>      /* for printf() and fprintf() */
-#include <sys/socket.h> /* for socket(), connect(), send(), and recv() */
-#include <arpa/inet.h>  /* for sockaddr_in and inet_addr() */
-#include <stdlib.h>     /* for atoi() and exit() */
-#include <string.h>     /* for memset() */
-#include <unistd.h>     /* for close() */
-#include <errno.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
+#include <stdio.h>  /* for printf() and fprintf() */
+#include <stdlib.h> /* for atoi() and exit() */
+#include <unistd.h> /* for close() */
+#include <string.h> /* for memset() */
 #include <time.h>
-#include <sys/time.h>
-#include <sys/wait.h>
 #include <ctype.h>
-// #include <find.hpp>
+#include <sys/socket.h> /* for socket(), connect(), send(), and recv() */
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/time.h>
+#include <netdb.h>
+#include <arpa/inet.h> /* for sockaddr_in and inet_addr() */
 
-#define RCVBUFSIZE 32                  /* Size of receive buffer */
+#define REQUEST_BUF_SIZE 1000
+#define RESPONSE_BUF_SIZE 1000
 
-void DieWithError(char *errorMessage); /* Error handling function */
-void checkError(int rc);
+struct HttpServerInfo
+{
+    char *host;
+    char *port;
+    char *path;
+};
+
+struct Timer {
+    int begin_time;
+    int end_time;
+};
+
+
+struct HttpServerInfo parse(int argc, char *argv[]);
+int connectHttpServer(struct HttpServerInfo *server);
+void fillGetRequest(struct HttpServerInfo *server, char *request);
+void sendHttpRequest(int sock, char *request);
+
+void startTimer(struct Timer *timer);
+void stopTimer(struct Timer *timer);
+void reportTime(struct Timer *timer, char *message);
 
 int main(int argc, char *argv[])
 {
-    int sock;                        /* Socket descriptor */
-    struct sockaddr_in echoServAddr; /* Echo server address */
-    unsigned short servPort;         /* Echo server port */
-    char *server_port;             /* Allows us to enter the server port number*/
-    char *servIP;                  /* Server IP address (dotted quad) */
-    int time_measure_mode;
-    // int slash_index;
-    char *URL; /* Entered URL */
-    char *domain;
-    char *subdirectory;
-    int bytesRcvd, totalBytesRcvd; /* Bytes read in single recv()
-    and total bytes read */
-    int rc;
+    struct Timer timer;
+    startTimer(&timer);
 
-    if (argc == 2)
+    struct HttpServerInfo server = parse(argc, argv);
+    int sock = connectHttpServer(&server);
+
+    char request[REQUEST_BUF_SIZE];
+    fillGetRequest(&server, request);
+    sendHttpRequest(sock, request);
+
+    close(sock);
+
+    stopTimer(&timer);
+    reportTime(&timer, "The whole request");
+
+    exit(0);
+}
+
+struct HttpServerInfo parse(int argc, char *argv[])
+{
+    struct HttpServerInfo server;
+
+    char *url = argc >= 2 ? argv[1] : NULL;
+    char *port = argc >= 3 ? argv[2] : "80";
+
+    if (!url)
     {
-        // printf("args: 2\n");
-        URL = argv[1];
-        server_port = "80";
-    }
-    else if (argc == 3)
-    {
-        // printf("args: 3\n");
-        // Ex: ./http_client server_url port_number
-        URL = argv[1];
-        server_port = argv[2];
-        time_measure_mode = 0;
-        ;
-    }
-    else if (argc == 4)
-    {
-        // printf("args: 4\n");
-        // Ex: ./http_client [-options] server_url port_number
-        URL = argv[2];
-        server_port = argv[3];
-        time_measure_mode = 1;
-    }
-    else /*if ((argc > 1) || (argc < 5))*/ /* Test for correct number of arguments */
-    {
-        // printf("args: N/A\n");
-        fprintf(stderr, "Usage: %s <Server IP> <Echo Word> [<Echo Port>]\n",
-                argv[0]);
+        fprintf(stderr, "Usage: %s <host> [<port>]\n", argv[0]);
         exit(1);
     }
 
-    // Parse our URL into domain and subdirectory
-    if (subdirectory = strstr(URL, "/"))
-    {
-        domain = strndup(URL, subdirectory - URL);
-    }
-    else
-    {
-        domain = URL;
-        subdirectory = "/";
-    }
+    // Parse our url into host and path
+    char *path = strstr(url, "/");
+    server.host = path ? strndup(url, path - url) : url;
+    server.path = path ? path : "/";
+    server.port = port;
 
-    // Set up our address info structs
-    struct addrinfo hints;
-    struct addrinfo *servinfo, *p; /*hints: what IPs we want, servinfo: linked list of IP addresses*/
+    return server;
+}
 
-    int rv;
+int connectHttpServer(struct HttpServerInfo *server)
+{
+    struct Timer timer;
+    startTimer(&timer);
+
+    int sock; /* Socket descriptor */
 
     // Set up our criteria for what socket we want
+    struct addrinfo hints;
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET; // use AF_INET6 to force IPv6
     hints.ai_socktype = SOCK_STREAM;
 
     // Get a list of potential sockets
-    if ((rv = getaddrinfo(domain, server_port, &hints, &servinfo)) != 0)
+    struct addrinfo *p_addr_info;
+    int rc = getaddrinfo(server->host, server->port, &hints, &p_addr_info);
+    if (rc != 0)
     {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rc));
         exit(1);
     }
 
-    int old_time = clock();
     // loop through all the results and connect to the first we can
-    for (p = servinfo; p != NULL; p = p->ai_next)
+    struct addrinfo *p;
+    for (p = p_addr_info; p != NULL; p = p->ai_next)
     {
         // If we can't make the socket
-        if ((sock = socket(p->ai_family, p->ai_socktype,
-                           p->ai_protocol)) == -1)
+        sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (sock == -1)
         {
             perror("socket");
             continue;
@@ -115,10 +120,8 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        // Convert number to IP address:
-        struct in_addr addr = {p->ai_addr};
-
-        break; // if we get here, we must have connected successfully
+        // if we get here, we must have connected successfully
+        break;
     }
 
     if (p == NULL)
@@ -128,57 +131,63 @@ int main(int argc, char *argv[])
         exit(2);
     }
 
-    // Set up our request stuff
-    char request[1000];
-    // char requestHostAddress[] = URL;
+    freeaddrinfo(p_addr_info); // all done with this structure
 
-    // Make our request
-    sprintf(request, "GET %s HTTP/1.1\r\nHost: %s\r\n\r\n", subdirectory, domain);
+    stopTimer(&timer);
+    reportTime(&timer, "Connecting to server");
+
+    return sock;
+}
+
+void fillGetRequest(struct HttpServerInfo *server, char *request)
+{
+    sprintf(request, "GET %s HTTP/1.1\r\nHost: %s\r\n\r\n", server->path, server->host);
+    int request_length = strlen(request);
 
     printf("%s", request);
-
-    int actual_length = strlen(request);
-    // Send request
-    // IS this an actual HTTP request? I didn't have to use the IP address, I didn't have to request any file
-    // sendto(server_port, request, 1000, 0, p, actual_length);
-    rc = send(server_port, request, actual_length, 0);
-    checkError(rc);
-    printf("Request Length: %d\n", actual_length);
-    // If we requested timer:
-    if (argc == 4)
-    {
-        int new_time = clock();
-        int elapsed_time = new_time - old_time;
-        printf("RTT: %d\n", elapsed_time);
-    }
-
-    // Set up our response stuff
-    int response_size = 1000;
-    char response[1000];
-
-    // Receive response
-    rc = recv(server_port, response, response_size, 0);
-    checkError(rc);
-    printf("Response length: %d\n", rc);
-    printf("Response: %s\n", response);
-
-    freeaddrinfo(servinfo); // all done with this structure
-
-    printf("\n"); /* Print a final linefeed */
-    close(sock);
-    exit(0);
+    printf("Request Length: %d\n", request_length);
 }
 
-void DieWithError(char *errorMessage)
+void sendHttpRequest(int sock, char *request)
 {
-    printf(errorMessage);
-    printf("\n");
-}
+    struct Timer timer;
+    startTimer(&timer);
 
-void checkError(int rc)
-{
+    int request_length = strlen(request);
+    int rc = send(sock, request, request_length, 0);
     if (rc == -1)
     {
-        printf("Error Number: %d\n", errno);
+        perror("Send request failed");
     }
+
+    // Receive response
+    char response[RESPONSE_BUF_SIZE];
+    memset(response, 0, RESPONSE_BUF_SIZE);
+    rc = recv(sock, response, RESPONSE_BUF_SIZE, 0);
+    if (rc == -1)
+    {
+        perror("Receive response failed");
+    }
+
+    printf("Response length: %d\n", rc);
+    printf("Response: %s\n", response);
+    printf("\n"); /* Print a final linefeed */
+
+    stopTimer(&timer);
+    reportTime(&timer, "Send request and receive response");
+}
+
+void startTimer(struct Timer *timer)
+{
+    timer->begin_time = clock();
+}
+
+void stopTimer(struct Timer *timer)
+{
+    timer->end_time = clock();
+}
+
+void reportTime(struct Timer *timer, char *message)
+{
+    printf("%s took: %d ms\n", message, timer->end_time - timer->begin_time);
 }
