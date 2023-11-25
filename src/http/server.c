@@ -1,4 +1,5 @@
 #include <stdio.h>      /* for printf() and fprintf() */
+#include <stdbool.h>    /* for using true false */
 #include <sys/socket.h> /* for socket(), bind(), and connect() */
 #include <arpa/inet.h>  /* for sockaddr_in and inet_ntoa() */
 #include <stdlib.h>     /* for atoi() and exit() */
@@ -6,86 +7,153 @@
 #include <unistd.h>     /* for close() */
 #include <signal.h>
 
-#define MAXPENDING 5 /* Maximum outstanding connection requests */
-#define BUFFER_SIZE 1024
+#define MAXPENDING 5 // Maximum outstanding connection requests
+#define BUFFER_SIZE 1000000
 
-void DieWithError(char *errorMessage); /* Error handling function */
-void HandleTCPClient(int clntSocket);  /* TCP client handling function */
+struct RequestInfo
+{
+    char version[5]; // HTTP/1.1 etc.
+    char method[10]; // GET, POST, PUT, DEELETE etc.
+    char path[100];
+    char body[1000];
+};
+
+int parse_server_port(int argc, char *argv[]);
+int open_server_socket(int server_port);
+void respond_to_client_request(int server_sock);
+void process_client_request(int client_sock);
+void parse_http_request(char *request, struct RequestInfo *request_info);
+void send_response(int client_sock, struct RequestInfo *request_info);
 
 int main(int argc, char *argv[])
 {
-    int servSock;                    /*Socket descriptor for server */
-    int clntSock;                    /* Socket descriptor for client */
-    struct sockaddr_in echoServAddr; /* Local address */
-    struct sockaddr_in echoClntAddr; /* Client address */
-    unsigned short echoServPort;     /* Server port */
-    unsigned int clntLen;            /* Length of client address data structure */
-    char *httpRequest;
+    int server_port = parse_server_port(argc, argv);
+    int server_sock = open_server_socket(server_port);
 
-    if (argc != 2) /* Test for correct number of arguments */
+    while (true)
+    {
+        respond_to_client_request(server_sock);
+        signal(SIGINT, SIG_DFL); // this allows one to stop server with Ctrl-C
+    }
+
+    close(server_sock);
+}
+
+int parse_server_port(int argc, char *argv[])
+{
+    if (argc != 2)
     {
         fprintf(stderr, "Usage: %s <Server Port>\n", argv[0]);
         exit(1);
     }
 
-    echoServPort = atoi(argv[1]); /* First arg: local port */
+    return atoi(argv[1]);
+}
 
-    // printf("Server Port: %d\n", echoServPort);
-
+int open_server_socket(int server_port)
+{
     /* Create socket for incoming connections */
-    if ((servSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
-        DieWithError("socket() failed");
-
-    /* Construct local address structure */
-    memset(&echoServAddr, 0, sizeof(echoServAddr));   /* Zero out structure */
-    echoServAddr.sin_family = AF_INET;                /* Internet address family */
-    echoServAddr.sin_addr.s_addr = htonl(INADDR_ANY); /* Any incoming interface */
-    echoServAddr.sin_port = htons(echoServPort);      /* Local port */
-
-    /* Bind to the local address */
-    if (bind(servSock, (struct sockaddr *)&echoServAddr, sizeof(echoServAddr)) < 0)
-        DieWithError("bind() failed");
-
-    /* Mark the socket so it will listen for incoming connections */
-    if (listen(servSock, MAXPENDING) < 0)
-        DieWithError("listen() failed");
-
-    for (;;) /* Run forever */
+    int server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (server_sock < 0)
     {
-        /* Set the size of the in-out parameter */
-        clntLen = sizeof(echoClntAddr); /* Wait for a client to connect */
-        if ((clntSock = accept(servSock, (struct sockaddr *)&echoClntAddr, &clntLen)) < 0)
-            DieWithError("accept() failed");
-        /* clntSock is connected to a client! */
-        printf("Handling client %s\n", inet_ntoa(echoClntAddr.sin_addr));
-        HandleTCPClient(clntSock);
-
-        close(clntSock);
-
-        // For Ctrl C
-        signal(SIGINT, SIG_DFL);
+        perror("Opening server socket failed");
+        exit(2);
     }
+
+    // set up server address from server port
+    struct sockaddr_in serverAddress;
+    memset(&serverAddress, 0, sizeof(serverAddress));  // Zero out structure
+    serverAddress.sin_family = AF_INET;                // Internet address family
+    serverAddress.sin_addr.s_addr = htonl(INADDR_ANY); // Any incoming interface
+    serverAddress.sin_port = htons(server_port);       // Local port
+
+    // bind server addess to server socket
+    int rc = bind(server_sock, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
+    if (rc < 0)
+    {
+        perror("Faile to bind server addess to server socket");
+        exit(3);
+    }
+
+    // have the server socket listen for incoming connections
+    if (listen(server_sock, MAXPENDING) < 0)
+    {
+        perror("Server socket failed to listen for incoming connections");
+        exit(4);
+    }
+
+    return server_sock;
 }
 
-void DieWithError(char *errorMessage)
+void respond_to_client_request(int server_sock)
 {
-    puts(errorMessage);
+    struct sockaddr_in client_address;
+    unsigned int length = sizeof(client_address);
+
+    int client_sock = accept(server_sock, (struct sockaddr *)&client_address, &length);
+    if (client_sock < 0)
+    {
+        perror("accept() failed");
+        return;
+    }
+
+    // client_sock is connected to a client
+    printf("Handling client %s\n", inet_ntoa(client_address.sin_addr));
+    process_client_request(client_sock);
+
+    // Close connection
+    close(client_sock);
 }
 
-void HandleTCPClient(int clntSocket) /* TCP client handling function */
+void process_client_request(int client_sock)
 {
-    char httpRequest[1000];
-    // if HTTP request is good
-    recv(clntSocket, httpRequest, 1000, 0);
-    printf("HTTP Request: %s\n", httpRequest);
-    // WHAT separates an HTTP request/response from just text?
-    char buffer[1024] = "HTTP/1.1 200 OK\r\n";
-    send(clntSocket, buffer, strlen(buffer), 0);
-    // if there is a file request:
-    // Find the file
-    // If file doesn't exist, send error 404
-    // handle bad HTTP request
-    // Close connection and wait for the next one
-    close(clntSocket);
+    char request[BUFFER_SIZE];
+    struct RequestInfo request_info;
+
+    recv(client_sock, request, BUFFER_SIZE, 0);
+    printf("HTTP Request: %s\n", request);
+
+    parse_http_request(request, &request_info);
+
+    send_response(client_sock, &request_info);
 }
-/* NOT REACHED */
+
+void parse_http_request(char *request, struct RequestInfo *request_info)
+{
+    // we will only look at the 1st buffer
+    sscanf(request, "%s /%s HTTP/%s",
+           request_info->method,
+           request_info->path,
+           request_info->version);
+}
+
+void send_response(int client_sock, struct RequestInfo *request_info)
+{
+    if (strcmp(request_info->method, "GET") != 0)
+    {
+        char *response = "HTTP/1.1 405 Method Not Allowed\r\n";
+        send(client_sock, response, strlen(response), 0);
+        return;
+    }
+
+    // path is assumed to be the file name
+    FILE *fp = fopen(request_info->path, "r");
+    if (fp == NULL)
+    {
+        perror("File not found");
+        char *response = "HTTP/1.1 404 Not Found\r\n";
+        send(client_sock, response, strlen(response), 0);
+        return;
+    }
+
+    char response[BUFFER_SIZE] = "HTTP/1.1 200 OK\r\n";
+    char buffer[1000];
+    while (fgets(buffer, 1000, fp) != NULL)
+    {
+        strncat(response, buffer, strlen(buffer));
+    }
+
+    send(client_sock, response, strlen(response), 0);
+
+    fclose(fp);
+}

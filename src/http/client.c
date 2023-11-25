@@ -12,7 +12,7 @@
 #include <arpa/inet.h> /* for sockaddr_in and inet_addr() */
 
 #define REQUEST_BUF_SIZE 1000
-#define RESPONSE_BUF_SIZE 1000
+#define RESPONSE_BUF_SIZE 1000000
 
 struct HttpServerInfo
 {
@@ -163,14 +163,15 @@ void sendHttpRequest(int sock, char *request)
     // Receive response
     char response[RESPONSE_BUF_SIZE];
     memset(response, 0, RESPONSE_BUF_SIZE);
-    rc = recv(sock, response, RESPONSE_BUF_SIZE, 0);
-    if (rc == -1)
+    int total_ength = 0;
+    int length = 0;
+    while ((length = recv(sock, response, RESPONSE_BUF_SIZE, 0)) > 0)
     {
-        perror("Receive response failed");
+        printf("%s", response);
+        total_ength += length;
     }
 
-    printf("Response length: %d\n", rc);
-    printf("Response: %s\n", response);
+    printf("Response length: %d\n", total_ength);
     printf("\n"); /* Print a final linefeed */
 
     stopTimer(&timer);

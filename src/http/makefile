@@ -4,7 +4,7 @@ all: client.exe server.exe
 	gcc $< -o $@
 
 %.o: %.c
-	gcc -c $< -o $@
+	gcc -Wall -c $< -o $@
 
 clean:
 	rm -f *.o *.exe
