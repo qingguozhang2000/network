@@ -28,30 +28,30 @@ struct Timer {
 
 
 struct HttpServerInfo parse(int argc, char *argv[]);
-int connectHttpServer(struct HttpServerInfo *server);
-void fillGetRequest(struct HttpServerInfo *server, char *request);
-void sendHttpRequest(int sock, char *request);
+int connect_http_server(const struct HttpServerInfo *p_server_info);
+void fill_get_request(struct HttpServerInfo *p_server_info, char *p_request);
+void send_http_request(int sock, const char *p_request);
 
-void startTimer(struct Timer *timer);
-void stopTimer(struct Timer *timer);
-void reportTime(struct Timer *timer, char *message);
+void start_timer(struct Timer *timer);
+void stop_timer(struct Timer *timer);
+void report_time(struct Timer *timer, char *message);
 
 int main(int argc, char *argv[])
 {
     struct Timer timer;
-    startTimer(&timer);
+    start_timer(&timer);
 
-    struct HttpServerInfo server = parse(argc, argv);
-    int sock = connectHttpServer(&server);
+    struct HttpServerInfo server_info = parse(argc, argv);
+    int sock = connect_http_server(&server_info);
 
     char request[REQUEST_BUF_SIZE];
-    fillGetRequest(&server, request);
-    sendHttpRequest(sock, request);
+    fill_get_request(&server_info, request);
+    send_http_request(sock, request);
 
     close(sock);
 
-    stopTimer(&timer);
-    reportTime(&timer, "The whole request");
+    stop_timer(&timer);
+    report_time(&timer, "The whole request");
 
     exit(0);
 }
@@ -78,10 +78,10 @@ struct HttpServerInfo parse(int argc, char *argv[])
     return server;
 }
 
-int connectHttpServer(struct HttpServerInfo *server)
+int connect_http_server(const struct HttpServerInfo *p_server_info)
 {
     struct Timer timer;
-    startTimer(&timer);
+    start_timer(&timer);
 
     int sock; /* Socket descriptor */
 
@@ -93,7 +93,7 @@ int connectHttpServer(struct HttpServerInfo *server)
 
     // Get a list of potential sockets
     struct addrinfo *p_addr_info;
-    int rc = getaddrinfo(server->host, server->port, &hints, &p_addr_info);
+    int rc = getaddrinfo(p_server_info->host, p_server_info->port, &hints, &p_addr_info);
     if (rc != 0)
     {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rc));
@@ -133,28 +133,28 @@ int connectHttpServer(struct HttpServerInfo *server)
 
     freeaddrinfo(p_addr_info); // all done with this structure
 
-    stopTimer(&timer);
-    reportTime(&timer, "Connecting to server");
+    stop_timer(&timer);
+    report_time(&timer, "Connecting to server");
 
     return sock;
 }
 
-void fillGetRequest(struct HttpServerInfo *server, char *request)
+void fill_get_request(struct HttpServerInfo *p_server_info, char *p_request)
 {
-    sprintf(request, "GET %s HTTP/1.1\r\nHost: %s\r\n\r\n", server->path, server->host);
-    int request_length = strlen(request);
+    sprintf(p_request, "GET %s HTTP/1.1\r\nHost: %s\r\n\r\n", p_server_info->path, p_server_info->host);
+    int request_length = strlen(p_request);
 
-    printf("%s", request);
+    printf("%s", p_request);
     printf("Request Length: %d\n", request_length);
 }
 
-void sendHttpRequest(int sock, char *request)
+void send_http_request(int sock, const char *p_request)
 {
     struct Timer timer;
-    startTimer(&timer);
+    start_timer(&timer);
 
-    int request_length = strlen(request);
-    int rc = send(sock, request, request_length, 0);
+    int request_length = strlen(p_request);
+    int rc = send(sock, p_request, request_length, 0);
     if (rc == -1)
     {
         perror("Send request failed");
@@ -165,7 +165,7 @@ void sendHttpRequest(int sock, char *request)
     memset(response, 0, RESPONSE_BUF_SIZE);
     int total_ength = 0;
     int length = 0;
-    while ((length = recv(sock, response, RESPONSE_BUF_SIZE, 0)) > 0)
+    while ((length = recv(sock, response, RESPONSE_BUF_SIZE, MSG_WAITALL)) > 0)
     {
         printf("%s", response);
         total_ength += length;
@@ -174,21 +174,21 @@ void sendHttpRequest(int sock, char *request)
     printf("Response length: %d\n", total_ength);
     printf("\n"); /* Print a final linefeed */
 
-    stopTimer(&timer);
-    reportTime(&timer, "Send request and receive response");
+    stop_timer(&timer);
+    report_time(&timer, "Send request and receive response");
 }
 
-void startTimer(struct Timer *timer)
+void start_timer(struct Timer *timer)
 {
     timer->begin_time = clock();
 }
 
-void stopTimer(struct Timer *timer)
+void stop_timer(struct Timer *timer)
 {
     timer->end_time = clock();
 }
 
-void reportTime(struct Timer *timer, char *message)
+void report_time(struct Timer *timer, char *message)
 {
     printf("%s took: %d ms\n", message, timer->end_time - timer->begin_time);
 }

@@ -108,14 +108,14 @@ void respond_to_client_request(int server_sock)
 
 void process_client_request(int client_sock)
 {
-    char request[MAX_REQ_SIZE];
+    char request[MAX_REQ_SIZE] = "";
     struct RequestInfo request_info;
 
-    recv(client_sock, request, MAX_REQ_SIZE, 0);
-    printf("HTTP Request: %s\n", request);
+    ssize_t n_bytes_received = recv(client_sock, request, MAX_REQ_SIZE, 0);
+    printf("HTTP Request: received %ld bytes\n", n_bytes_received);
+    puts(request);
 
     parse_http_request(request, &request_info);
-
     send_response(client_sock, &request_info);
 }
 
