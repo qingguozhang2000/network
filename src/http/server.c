@@ -7,8 +7,9 @@
 #include <unistd.h>     /* for close() */
 #include <signal.h>
 
-#define MAXPENDING 5 // Maximum outstanding connection requests
-#define BUFFER_SIZE 1000000
+#define MAX_PEND_REQ 5 // Maximum outstanding connection requests
+#define MAX_REQ_SIZE 4096
+#define BUF_SIZE 1000
 
 struct RequestInfo
 {
@@ -22,7 +23,7 @@ int parse_server_port(int argc, char *argv[]);
 int open_server_socket(int server_port);
 void respond_to_client_request(int server_sock);
 void process_client_request(int client_sock);
-void parse_http_request(char *request, struct RequestInfo *request_info);
+void parse_http_request(const char *request, struct RequestInfo *request_info);
 void send_response(int client_sock, struct RequestInfo *request_info);
 
 int main(int argc, char *argv[])
@@ -76,7 +77,7 @@ int open_server_socket(int server_port)
     }
 
     // have the server socket listen for incoming connections
-    if (listen(server_sock, MAXPENDING) < 0)
+    if (listen(server_sock, MAX_PEND_REQ) < 0)
     {
         perror("Server socket failed to listen for incoming connections");
         exit(4);
@@ -107,10 +108,10 @@ void respond_to_client_request(int server_sock)
 
 void process_client_request(int client_sock)
 {
-    char request[BUFFER_SIZE];
+    char request[MAX_REQ_SIZE];
     struct RequestInfo request_info;
 
-    recv(client_sock, request, BUFFER_SIZE, 0);
+    recv(client_sock, request, MAX_REQ_SIZE, 0);
     printf("HTTP Request: %s\n", request);
 
     parse_http_request(request, &request_info);
@@ -118,7 +119,7 @@ void process_client_request(int client_sock)
     send_response(client_sock, &request_info);
 }
 
-void parse_http_request(char *request, struct RequestInfo *request_info)
+void parse_http_request(const char *request, struct RequestInfo *request_info)
 {
     // we will only look at the 1st buffer
     sscanf(request, "%s /%s HTTP/%s",
@@ -146,14 +147,18 @@ void send_response(int client_sock, struct RequestInfo *request_info)
         return;
     }
 
-    char response[BUFFER_SIZE] = "HTTP/1.1 200 OK\r\n";
-    char buffer[1000];
-    while (fgets(buffer, 1000, fp) != NULL)
+    char buffer[BUF_SIZE] = "HTTP/1.1 200 OK\r\n";
+    send(client_sock, buffer, strlen(buffer), 0);
+    while (!feof(fp))
     {
-        strncat(response, buffer, strlen(buffer));
+        size_t n_bytes_read = fread(buffer, 1, BUF_SIZE, fp);
+        printf("read %ld bytes\n", n_bytes_read);
+
+        ssize_t n_bytes_sent = send(client_sock, buffer, n_bytes_read, 0);
+        printf("sent %ld bytes\n", n_bytes_sent);
     }
 
-    send(client_sock, response, strlen(response), 0);
+    send(client_sock, "\r\n", strlen("\r\n"), 0);
 
     fclose(fp);
 }
